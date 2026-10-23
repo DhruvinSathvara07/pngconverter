@@ -6,7 +6,7 @@ export function useExportJob() {
   const [job, setJob] = useState<ExportJobStatus | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startJob = (newJob: ExportJobStatus) => {
     setJob(newJob);

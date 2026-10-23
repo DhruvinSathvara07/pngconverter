@@ -1,6 +1,7 @@
 import { ProjectInfo, ExportOptions, ExportJobStatus } from '@exporter/shared';
 
-const API_BASE = '/api';
+const ENV_API = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+const API_BASE = ENV_API.startsWith('http') && !ENV_API.endsWith('/api') ? `${ENV_API}/api` : ENV_API;
 
 export const api = {
   async loadWorkspaceCarousel(): Promise<ProjectInfo> {

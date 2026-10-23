@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "prebuild": "npm run --prefix ../../packages/shared build",
+    "build": "npm run --prefix ../../packages/shared build && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

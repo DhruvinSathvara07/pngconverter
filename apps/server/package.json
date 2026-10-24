@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "prebuild": "npm run --prefix ../../packages/shared build",
-    "build": "npm run --prefix ../../packages/shared build && tsc",
+    "build": "tsc",
     "start": "node dist/index.js"
   },
   "dependencies": {

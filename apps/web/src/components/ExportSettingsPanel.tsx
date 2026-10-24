@@ -50,14 +50,20 @@ export const ExportSettingsPanel: React.FC<ExportSettingsPanelProps> = ({
 
   return (
     <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-          <Settings className="w-4 h-4 text-pink-400" />
-          3. Instagram Export Settings
-        </h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          Choose export dimensions, resolution multiplier, and background fit
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <Settings className="w-4 h-4 text-pink-400" />
+            3. Instagram Export Settings
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Choose export dimensions, resolution multiplier, and background fit
+          </p>
+        </div>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          24/7 Engine
+        </span>
       </div>
 
       {/* Preset selection */}

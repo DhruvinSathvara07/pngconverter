@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Archive, CheckCircle2, AlertCircle, RefreshCw, Maximize2, FileCheck, CheckSquare, Square } from 'lucide-react';
+import { Download, Archive, RefreshCw, Maximize2, FileCheck, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import { ExportJobStatus } from '@exporter/shared';
 import { api } from '../services/api.js';
 
@@ -7,12 +7,18 @@ interface ExportResultsProps {
   job: ExportJobStatus;
   onRetrySlide: (index: number) => void;
   onOpenModal: (url: string, title: string) => void;
+  onDownloadSingle?: (slideIndex: number, jobId: string, fileName: string) => void;
+  onDownloadAll?: (jobId: string) => void;
+  onDownloadSelected?: (jobId: string, indices: number[]) => Promise<void> | void;
 }
 
 export const ExportResults: React.FC<ExportResultsProps> = ({
   job,
   onRetrySlide,
   onOpenModal,
+  onDownloadSingle,
+  onDownloadAll,
+  onDownloadSelected,
 }) => {
   const [selectedIndices, setSelectedIndices] = useState<number[]>(
     job.slides.filter((s) => s.status === 'completed').map((s) => s.index)
@@ -32,11 +38,36 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
     if (selectedIndices.length === 0) return;
     setIsDownloadingSelected(true);
     try {
-      await api.downloadSelectedZip(job.jobId, selectedIndices);
+      if (onDownloadSelected) {
+        await onDownloadSelected(job.jobId, selectedIndices);
+      } else {
+        await api.downloadSelectedZip(job.jobId, selectedIndices);
+      }
     } catch (err) {
       console.error('Download selected failed:', err);
     } finally {
       setIsDownloadingSelected(false);
+    }
+  };
+
+  const handleDownloadAll = () => {
+    if (onDownloadAll) {
+      onDownloadAll(job.jobId);
+    } else {
+      window.location.href = api.getZipDownloadUrl(job.jobId);
+    }
+  };
+
+  const handleDownloadSingle = (slideIndex: number, fileName: string) => {
+    if (onDownloadSingle) {
+      onDownloadSingle(slideIndex, job.jobId, fileName);
+    } else {
+      const a = document.createElement('a');
+      a.href = api.getSingleDownloadUrl(job.jobId, slideIndex);
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
@@ -65,15 +96,15 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
 
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Download all as ZIP */}
-          {job.zipDownloadUrl && (
-            <a
-              href={api.getZipDownloadUrl(job.jobId)}
-              download
+          {completedSlides.length > 0 && (
+            <button
+              type="button"
+              onClick={handleDownloadAll}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs tracking-wide bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 transition-all cursor-pointer"
             >
               <Archive className="w-4 h-4" />
               <span>Download All as ZIP</span>
-            </a>
+            </button>
           )}
 
           {/* Download selected */}
@@ -108,10 +139,8 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
         <div className="flex items-center space-x-2">
           <button
             type="button"
-            onClick={() =>
-              setSelectedIndices(completedSlides.map((s) => s.index))
-            }
-            className="hover:text-slate-200"
+            onClick={() => setSelectedIndices(completedSlides.map((s) => s.index))}
+            className="hover:text-slate-200 cursor-pointer"
           >
             Select All
           </button>
@@ -119,7 +148,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
           <button
             type="button"
             onClick={() => setSelectedIndices([])}
-            className="hover:text-slate-200"
+            className="hover:text-slate-200 cursor-pointer"
           >
             Deselect All
           </button>
@@ -132,6 +161,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
         {job.slides.map((slide) => {
           const isSelected = selectedIndices.includes(slide.index);
           const isDone = slide.status === 'completed';
+          const previewSrc = slide.previewUrl || api.getSlidePreviewUrl(job.jobId, slide.index);
 
           return (
             <div
@@ -147,7 +177,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
                 {isDone ? (
                   <>
                     <img
-                      src={api.getSlidePreviewUrl(job.jobId, slide.index)}
+                      src={previewSrc}
                       alt={slide.fileName}
                       className="w-full h-full object-contain"
                       loading="lazy"
@@ -157,7 +187,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
                     <button
                       type="button"
                       onClick={() => toggleSelect(slide.index)}
-                      className="absolute top-2.5 left-2.5 p-1 rounded-md bg-slate-900/80 backdrop-blur-sm border border-slate-700 text-slate-300 hover:text-white"
+                      className="absolute top-2.5 left-2.5 p-1 rounded-md bg-slate-900/80 backdrop-blur-sm border border-slate-700 text-slate-300 hover:text-white cursor-pointer"
                     >
                       {isSelected ? (
                         <CheckSquare className="w-4 h-4 text-pink-400" />
@@ -169,12 +199,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
                     {/* Inspect button overlay */}
                     <button
                       type="button"
-                      onClick={() =>
-                        onOpenModal(
-                          api.getSlidePreviewUrl(job.jobId, slide.index),
-                          slide.fileName
-                        )
-                      }
+                      onClick={() => onOpenModal(previewSrc, slide.fileName)}
                       className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer"
                     >
                       <span className="px-3 py-1.5 rounded-lg bg-slate-900/90 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg">
@@ -196,7 +221,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
                     <button
                       type="button"
                       onClick={() => onRetrySlide(slide.index)}
-                      className="px-2.5 py-1 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-xs font-semibold inline-flex items-center gap-1"
+                      className="px-2.5 py-1 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                     >
                       <RefreshCw className="w-3 h-3" />
                       Retry
@@ -228,14 +253,14 @@ export const ExportResults: React.FC<ExportResultsProps> = ({
                 </div>
 
                 {isDone && (
-                  <a
-                    href={api.getSingleDownloadUrl(job.jobId, slide.index)}
-                    download={slide.fileName}
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadSingle(slide.index, slide.fileName)}
                     className="w-full py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700/80 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-pink-400" />
                     <span>Download PNG</span>
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

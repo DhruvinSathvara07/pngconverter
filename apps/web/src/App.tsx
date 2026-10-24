@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Header } from './components/Header.js';
 import { ImportDropzone } from './components/ImportDropzone.js';
 import { SlideSelector } from './components/SlideSelector.js';
@@ -18,6 +18,7 @@ export const App: React.FC = () => {
   const [selectedSlideIndices, setSelectedSlideIndices] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
@@ -29,7 +30,15 @@ export const App: React.FC = () => {
     title: '',
   });
 
-  const { job, isExporting, startJob, retrySlide } = useExportJob();
+  const {
+    job,
+    isExporting,
+    runExport,
+    retrySlide,
+    downloadSingle,
+    downloadAll,
+    downloadSelected,
+  } = useExportJob();
 
   const [options, setOptions] = useState<ExportOptions>({
     sessionId: '',
@@ -118,8 +127,7 @@ export const App: React.FC = () => {
     };
 
     try {
-      const createdJob = await api.startExport(exportPayload);
-      startJob(createdJob);
+      await runExport(exportPayload, iframeRef.current);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to start export');
     }
@@ -140,7 +148,7 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={() => setErrorMessage(null)}
-              className="p-1 hover:text-white"
+              className="p-1 hover:text-white cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -199,6 +207,7 @@ export const App: React.FC = () => {
               onSelectSlideIndex={setActiveSlideIndex}
               job={job}
               onOpenModal={(url, title) => setModalState({ isOpen: true, imageUrl: url, title })}
+              iframeRef={iframeRef}
             />
 
             {job && job.state !== 'idle' && (
@@ -208,10 +217,13 @@ export const App: React.FC = () => {
             {job && (job.state === 'rendering' || job.state === 'completed' || job.state === 'failed') && (
               <ExportResults
                 job={job}
-                onRetrySlide={retrySlide}
+                onRetrySlide={(idx) => retrySlide(idx, iframeRef.current)}
                 onOpenModal={(url, title) =>
                   setModalState({ isOpen: true, imageUrl: url, title })
                 }
+                onDownloadSingle={downloadSingle}
+                onDownloadAll={downloadAll}
+                onDownloadSelected={downloadSelected}
               />
             )}
           </div>

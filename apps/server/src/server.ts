@@ -21,6 +21,18 @@ export function createServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+  // Root status endpoint
+  app.get('/', (req, res) => {
+    res.json({
+      name: 'Instagram Carousel Exporter API',
+      status: 'active',
+      uptime: process.uptime(),
+      healthEndpoint: '/api/health',
+      time: new Date().toISOString(),
+      version: '1.0.0',
+    });
+  });
+
   // Mount API routers
   app.use('/api/projects', projectRouter);
   app.use('/api/exports', exportRouter);

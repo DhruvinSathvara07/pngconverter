@@ -11,6 +11,7 @@ interface PreviewWorkspaceProps {
   onSelectSlideIndex: (index: number) => void;
   job: ExportJobStatus | null;
   onOpenModal: (url: string, title: string) => void;
+  iframeRef?: React.RefObject<HTMLIFrameElement>;
 }
 
 export const PreviewWorkspace: React.FC<PreviewWorkspaceProps> = ({
@@ -21,10 +22,12 @@ export const PreviewWorkspace: React.FC<PreviewWorkspaceProps> = ({
   onSelectSlideIndex,
   job,
   onOpenModal,
+  iframeRef,
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(0.55); // Default scale to fit nicely
   const [previewMode, setPreviewMode] = useState<'html' | 'png'>('html');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const internalIframeRef = useRef<HTMLIFrameElement>(null);
+  const activeIframe = iframeRef || internalIframeRef;
 
   const activeSlide = slides[activeSlideIndex] || slides[0];
   const totalSlides = slides.length;
@@ -34,6 +37,22 @@ export const PreviewWorkspace: React.FC<PreviewWorkspaceProps> = ({
   );
 
   const iframeSrc = sessionId && entryHtml ? api.getIframeUrl(sessionId, entryHtml) : '';
+
+  // Auto-scroll iframe to active slide
+  React.useEffect(() => {
+    try {
+      const doc = activeIframe.current?.contentDocument;
+      if (doc && activeSlide?.selector) {
+        const els = doc.querySelectorAll(activeSlide.selector);
+        const target = els[activeSlideIndex];
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        }
+      }
+    } catch {
+      // cross-origin protection
+    }
+  }, [activeSlideIndex, activeSlide, activeIframe]);
 
   const handlePrev = () => {
     if (activeSlideIndex > 0) {
@@ -48,8 +67,8 @@ export const PreviewWorkspace: React.FC<PreviewWorkspaceProps> = ({
   };
 
   const handleReloadIframe = () => {
-    if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src;
+    if (activeIframe.current) {
+      activeIframe.current.src = activeIframe.current.src;
     }
   };
 
@@ -181,7 +200,7 @@ export const PreviewWorkspace: React.FC<PreviewWorkspaceProps> = ({
             className="shadow-2xl rounded-2xl overflow-hidden border border-slate-700 bg-white"
           >
             <iframe
-              ref={iframeRef}
+              ref={activeIframe}
               src={iframeSrc}
               title="Carousel Live Preview"
               style={{

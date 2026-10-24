@@ -151,18 +151,112 @@ export class SlideDetector {
         warnings,
       };
     } catch (err: any) {
-      console.warn(`[SlideDetector] Slide auto-detection warning for session ${sessionId}:`, err.message);
-      warnings.push(`Automatic slide detection encountered an issue: ${err.message || 'Could not evaluate DOM'}. You can specify a custom selector.`);
-      return {
-        detectedSlides: [],
-        detectedSelector: customSelector || '',
-        candidateSelectors: [],
-        warnings,
-      };
+      console.warn(`[SlideDetector] Playwright auto-detection unavailable (${err.message}). Using fast HTML static parser.`);
+      try {
+        const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+        return SlideDetector.parseHtmlStatically(htmlContent, customSelector);
+      } catch (staticErr: any) {
+        warnings.push(`Automatic slide detection issue: ${staticErr.message}`);
+        return {
+          detectedSlides: [],
+          detectedSelector: customSelector || '',
+          candidateSelectors: [],
+          warnings,
+        };
+      }
     } finally {
       if (browser) {
         await browser.close().catch(() => {});
       }
     }
+  }
+
+  static parseHtmlStatically(
+    html: string,
+    customSelector?: string
+  ): {
+    detectedSlides: SlideInfo[];
+    detectedSelector: string;
+    candidateSelectors: CandidateSelector[];
+    warnings: string[];
+  } {
+    const candidateSelectors: CandidateSelector[] = [];
+    const selectorsToCheck = [
+      { sel: '.slide', regex: /<([a-zA-Z0-9]+)[^>]*\bclass=["'][^"']*\bslide\b[^"']*["'][^>]*>/gi },
+      { sel: '.carousel-slide', regex: /<([a-zA-Z0-9]+)[^>]*\bclass=["'][^"']*\bcarousel-slide\b[^"']*["'][^>]*>/gi },
+      { sel: '.swiper-slide', regex: /<([a-zA-Z0-9]+)[^>]*\bclass=["'][^"']*\bswiper-slide\b[^"']*["'][^>]*>/gi },
+      { sel: '[data-slide]', regex: /<([a-zA-Z0-9]+)[^>]*\bdata-slide\b[^>]*>/gi },
+      { sel: 'section', regex: /<section\b[^>]*>/gi },
+    ];
+
+    if (customSelector) {
+      const escaped = customSelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (customSelector.startsWith('.')) {
+        const className = customSelector.slice(1);
+        selectorsToCheck.unshift({
+          sel: customSelector,
+          regex: new RegExp(`<([a-zA-Z0-9]+)[^>]*\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*>`, 'gi'),
+        });
+      } else {
+        selectorsToCheck.unshift({
+          sel: customSelector,
+          regex: new RegExp(`<${escaped}\\b[^>]*>`, 'gi'),
+        });
+      }
+    }
+
+    let chosenSelector = '';
+    let matchedTags: string[] = [];
+
+    for (const { sel, regex } of selectorsToCheck) {
+      const matches = html.match(regex) || [];
+      if (matches.length > 0) {
+        const sampleLabels = matches.slice(0, 4).map((tag, idx) => {
+          const ariaMatch = tag.match(/aria-label=["']([^"']+)["']/i);
+          const titleMatch = tag.match(/data-title=["']([^"']+)["']/i) || tag.match(/title=["']([^"']+)["']/i);
+          return ariaMatch ? ariaMatch[1] : titleMatch ? titleMatch[1] : `Slide ${idx + 1}`;
+        });
+
+        candidateSelectors.push({
+          selector: sel,
+          count: matches.length,
+          sampleLabels,
+        });
+
+        if (!chosenSelector) {
+          chosenSelector = sel;
+          matchedTags = matches;
+        }
+      }
+    }
+
+    if (customSelector && candidateSelectors.some((c) => c.selector === customSelector)) {
+      chosenSelector = customSelector;
+      const target = selectorsToCheck.find((s) => s.sel === customSelector);
+      matchedTags = target ? html.match(target.regex) || [] : matchedTags;
+    }
+
+    const detectedSlides: SlideInfo[] = matchedTags.map((tag, index) => {
+      const ariaMatch = tag.match(/aria-label=["']([^"']+)["']/i);
+      const titleMatch = tag.match(/data-title=["']([^"']+)["']/i) || tag.match(/title=["']([^"']+)["']/i);
+      const label = ariaMatch ? ariaMatch[1] : titleMatch ? titleMatch[1] : `Slide ${index + 1}`;
+
+      return {
+        id: `slide-${index + 1}`,
+        index,
+        selector: chosenSelector,
+        label,
+        originalWidth: 1080,
+        originalHeight: 1350,
+        originalAspectRatio: +(1080 / 1350).toFixed(3),
+      };
+    });
+
+    return {
+      detectedSlides,
+      detectedSelector: chosenSelector || '.slide',
+      candidateSelectors,
+      warnings: [],
+    };
   }
 }

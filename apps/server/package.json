@@ -10,7 +10,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@exporter/shared": "*",
+    "@exporter/shared": "file:../../packages/shared",
     "adm-zip": "^0.5.16",
     "cors": "^2.8.5",
     "express": "^4.21.1",

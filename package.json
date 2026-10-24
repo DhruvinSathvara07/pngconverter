@@ -13,6 +13,8 @@
     "dev:web": "npm run dev -w @exporter/web",
     "build": "npm run build -w @exporter/shared && npm run build -w @exporter/server && npm run build -w @exporter/web",
     "build:web": "npm run build -w @exporter/shared && npm run build -w @exporter/web",
+    "build:server": "npm run build -w @exporter/shared && npm run build -w @exporter/server",
+    "vercel-build": "npm run build:web",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

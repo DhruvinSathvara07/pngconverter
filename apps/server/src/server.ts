@@ -29,10 +29,12 @@ export function createServer() {
   // Central error handling
   app.use(errorHandler);
 
-  // Schedule periodic cleanup of expired jobs
-  setInterval(() => {
-    ExportJobManager.cleanupExpiredJobs();
-  }, 10 * 60 * 1000);
+  // Schedule periodic cleanup of expired jobs (only in long-running server mode)
+  if (!process.env.VERCEL) {
+    setInterval(() => {
+      ExportJobManager.cleanupExpiredJobs();
+    }, 10 * 60 * 1000);
+  }
 
   return app;
 }

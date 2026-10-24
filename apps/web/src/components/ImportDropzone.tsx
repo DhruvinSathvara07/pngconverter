@@ -26,31 +26,85 @@ export const ImportDropzone: React.FC<ImportDropzoneProps> = ({
     e.preventDefault();
     setIsDragOver(false);
 
-    const items = e.dataTransfer.items;
-    const files: File[] = [];
-    const relativePaths: string[] = [];
+    try {
+      setIsLoading(true);
+      const items = e.dataTransfer.items;
+      const files: File[] = [];
+      const relativePaths: string[] = [];
 
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) {
-            files.push(file);
-            relativePaths.push(file.webkitRelativePath || file.name);
+      if (!items || items.length === 0) {
+        for (let i = 0; i < e.dataTransfer.files.length; i++) {
+          const f = e.dataTransfer.files[i];
+          files.push(f);
+          relativePaths.push(f.name);
+        }
+      } else {
+        const entries: any[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file') {
+            const entry = (item as any).webkitGetAsEntry ? (item as any).webkitGetAsEntry() : null;
+            if (entry) {
+              entries.push(entry);
+            } else {
+              const file = item.getAsFile();
+              if (file) {
+                files.push(file);
+                relativePaths.push(file.name);
+              }
+            }
           }
         }
-      }
-    } else {
-      for (let i = 0; i < e.dataTransfer.files.length; i++) {
-        const file = e.dataTransfer.files[i];
-        files.push(file);
-        relativePaths.push(file.name);
-      }
-    }
 
-    if (files.length > 0) {
-      await uploadFiles(files, relativePaths);
+        const traverseEntry = async (entry: any, currentPath = ''): Promise<void> => {
+          if (!entry) return;
+          if (entry.isFile) {
+            await new Promise<void>((resolve) => {
+              entry.file(
+                (file: File) => {
+                  files.push(file);
+                  relativePaths.push(currentPath ? `${currentPath}/${file.name}` : file.name);
+                  resolve();
+                },
+                () => resolve()
+              );
+            });
+          } else if (entry.isDirectory) {
+            const dirReader = entry.createReader();
+            const readBatch = (): Promise<any[]> => {
+              return new Promise((resolve) => {
+                dirReader.readEntries(
+                  (results: any[]) => resolve(results || []),
+                  () => resolve([])
+                );
+              });
+            };
+
+            let batch: any[];
+            do {
+              batch = await readBatch();
+              const dirPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+              for (const child of batch) {
+                await traverseEntry(child, dirPath);
+              }
+            } while (batch.length > 0);
+          }
+        };
+
+        for (const entry of entries) {
+          await traverseEntry(entry);
+        }
+      }
+
+      if (files.length > 0) {
+        await uploadFiles(files, relativePaths);
+      } else {
+        onError('No readable files were dropped.');
+      }
+    } catch (err: any) {
+      onError(err.message || 'Failed to process dropped files');
+    } finally {
+      setIsLoading(false);
     }
   };
 

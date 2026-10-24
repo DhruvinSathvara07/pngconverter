@@ -6,6 +6,7 @@ import { ProjectImporter } from '../services/projectImporter.js';
 import { AssetResolver } from '../services/assetResolver.js';
 import { SlideDetector } from '../services/slideDetector.js';
 import { validateBody } from '../middleware/validation.js';
+import { AppError } from '../middleware/errorHandler.js';
 import { DetectSlidesSchema, ProjectInfo } from '@exporter/shared';
 import { SERVER_CONFIG } from '../config/constants.js';
 
@@ -19,7 +20,7 @@ const upload = multer({
 
 export const projectRouter = Router();
 
-// Endpoint 1: Upload ZIP or files
+// Endpoint 1: Upload ZIP, folder, or loose HTML/CSS/JS files
 projectRouter.post(
   '/upload',
   upload.array('files'),
@@ -27,7 +28,7 @@ projectRouter.post(
     try {
       const files = req.files as Express.Multer.File[];
       if (!files || files.length === 0) {
-        return res.status(400).json({ error: 'No files were uploaded' });
+        return res.status(400).json({ error: 'No files were uploaded. Please select an HTML file, project ZIP, or folder.' });
       }
 
       const sessionId = ProjectImporter.createSession();
@@ -35,21 +36,34 @@ projectRouter.post(
       let htmlFiles: string[] = [];
       const warnings: string[] = [];
 
-      // Check if uploaded file is a ZIP archive
-      const zipFile = files.find(
+      // Separate ZIP archives from regular files
+      const zipFiles = files.filter(
         (f) => f.originalname.toLowerCase().endsWith('.zip') || f.mimetype === 'application/zip'
       );
+      const regularFiles = files.filter(
+        (f) => !f.originalname.toLowerCase().endsWith('.zip') && f.mimetype !== 'application/zip'
+      );
 
-      if (zipFile && files.length === 1) {
-        const result = ProjectImporter.importZip(sessionId, zipFile.buffer);
-        entryHtml = result.entryHtml;
-        htmlFiles = result.htmlFiles;
-        warnings.push(...result.warnings);
-      } else {
-        const fileItems = files.map((f, i) => {
-          // Check for relative path in body if sent via client form data
-          const relPaths = req.body.relativePaths;
-          const relPath = Array.isArray(relPaths) ? relPaths[i] : undefined;
+      // 1. Process ZIP archives if present
+      for (const zipFile of zipFiles) {
+        const zipResult = ProjectImporter.importZip(sessionId, zipFile.buffer);
+        if (!entryHtml && zipResult.entryHtml) {
+          entryHtml = zipResult.entryHtml;
+        }
+        htmlFiles.push(...zipResult.htmlFiles);
+        warnings.push(...zipResult.warnings);
+      }
+
+      // 2. Process regular files if present
+      if (regularFiles.length > 0) {
+        const relPaths = req.body.relativePaths;
+        const fileItems = regularFiles.map((f, i) => {
+          let relPath: string | undefined;
+          if (Array.isArray(relPaths)) {
+            relPath = relPaths[i];
+          } else if (typeof relPaths === 'string' && i === 0) {
+            relPath = relPaths;
+          }
           return {
             originalname: f.originalname,
             buffer: f.buffer,
@@ -57,13 +71,31 @@ projectRouter.post(
           };
         });
 
-        const result = ProjectImporter.importUploadedFiles(sessionId, fileItems);
-        entryHtml = result.entryHtml;
-        htmlFiles = result.htmlFiles;
-        warnings.push(...result.warnings);
+        const filesResult = ProjectImporter.importUploadedFiles(sessionId, fileItems);
+        if (!entryHtml && filesResult.entryHtml) {
+          entryHtml = filesResult.entryHtml;
+        }
+        htmlFiles.push(...filesResult.htmlFiles);
+        warnings.push(...filesResult.warnings);
       }
 
-      // Automatically run slide detection and asset scanning
+      // Deduplicate discovered HTML files
+      const sessionDir = ProjectImporter.getSessionDir(sessionId);
+      htmlFiles = Array.from(new Set(htmlFiles));
+
+      if (htmlFiles.length === 0) {
+        htmlFiles = ProjectImporter.discoverHtmlFiles(sessionDir);
+      }
+
+      if (htmlFiles.length === 0) {
+        throw new AppError('No HTML files (.html or .htm) found in the uploaded files. Please upload an HTML file or a project containing an entry HTML file.', 400);
+      }
+
+      if (!entryHtml || !htmlFiles.includes(entryHtml)) {
+        entryHtml = ProjectImporter.selectDefaultEntry(htmlFiles);
+      }
+
+      // Automatically run slide detection and asset scanning safely
       const slideResult = await SlideDetector.detect(sessionId, entryHtml);
       const assetResult = AssetResolver.scanProjectAssets(sessionId, entryHtml);
 
@@ -81,6 +113,8 @@ projectRouter.post(
         missingAssets: assetResult.missingAssets,
         warnings,
       };
+
+      console.log(`[Project] Uploaded session ${sessionId}: entry="${entryHtml}", ${htmlFiles.length} HTML files, ${slideResult.detectedSlides.length} slides detected`);
 
       return res.json({ project: projectInfo });
     } catch (err) {
@@ -111,6 +145,8 @@ projectRouter.post('/load-workspace', async (req: Request, res: Response, next) 
       missingAssets: assetResult.missingAssets,
       warnings,
     };
+
+    console.log(`[Project] Loaded workspace session ${sessionId}: entry="${result.entryHtml}", ${slideResult.detectedSlides.length} slides detected`);
 
     return res.json({ project: projectInfo });
   } catch (err) {
@@ -146,6 +182,8 @@ projectRouter.post(
         missingAssets: assetResult.missingAssets,
         warnings,
       };
+
+      console.log(`[Project] Re-detected session ${sessionId}: selector="${slideResult.detectedSelector}", ${slideResult.detectedSlides.length} slides`);
 
       return res.json({ project: projectInfo });
     } catch (err) {

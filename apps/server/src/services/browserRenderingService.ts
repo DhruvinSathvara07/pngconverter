@@ -1,6 +1,7 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import path from 'path';
 import fs from 'fs';
+import { pathToFileURL } from 'node:url';
 import { ExportOptions } from '@exporter/shared';
 import { ProjectImporter } from './projectImporter.js';
 
@@ -45,7 +46,7 @@ export class BrowserRenderingService {
 
     try {
       const page: Page = await context.newPage();
-      const fileUrl = `file://${htmlPath}`;
+      const fileUrl = pathToFileURL(htmlPath).href;
 
       await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 35000 });
 

@@ -1,5 +1,7 @@
 import { chromium, Browser } from 'playwright';
 import path from 'path';
+import fs from 'fs';
+import { pathToFileURL } from 'node:url';
 import { COMMON_SLIDE_SELECTORS, SlideInfo, CandidateSelector } from '@exporter/shared';
 import { ProjectImporter } from './projectImporter.js';
 
@@ -16,19 +18,36 @@ export class SlideDetector {
   }> {
     const sessionDir = ProjectImporter.getSessionDir(sessionId);
     const htmlPath = path.join(sessionDir, entryHtml);
-    const fileUrl = `file://${htmlPath}`;
-
-    const browser: Browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security'],
-    });
-
     const warnings: string[] = [];
 
+    if (!fs.existsSync(htmlPath)) {
+      warnings.push(`Entry HTML file not found on disk: ${entryHtml}`);
+      return {
+        detectedSlides: [],
+        detectedSelector: customSelector || '',
+        candidateSelectors: [],
+        warnings,
+      };
+    }
+
+    const fileUrl = pathToFileURL(htmlPath).href;
+
+    let browser: Browser | null = null;
+
     try {
+      browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security'],
+      });
+
       const page = await browser.newPage();
       await page.setViewportSize({ width: 1080, height: 1350 });
-      await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+      try {
+        await page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      } catch (navErr: any) {
+        warnings.push(`Page navigation warning: ${navErr.message}. Attempting to parse DOM anyway.`);
+      }
 
       // Wait a short moment for dynamic scripts or fonts
       await page.waitForTimeout(300);
@@ -131,8 +150,19 @@ export class SlideDetector {
         candidateSelectors,
         warnings,
       };
+    } catch (err: any) {
+      console.warn(`[SlideDetector] Slide auto-detection warning for session ${sessionId}:`, err.message);
+      warnings.push(`Automatic slide detection encountered an issue: ${err.message || 'Could not evaluate DOM'}. You can specify a custom selector.`);
+      return {
+        detectedSlides: [],
+        detectedSelector: customSelector || '',
+        candidateSelectors: [],
+        warnings,
+      };
     } finally {
-      await browser.close();
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
     }
   }
 }
